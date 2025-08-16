@@ -1,1 +1,59 @@
 /target
+
+
+# Compiled object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+launchllamacpp
+
+# Debug files
+*.dSYM/
+*.stackdump
+*.core
+
+# CMake build files
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/Makefile
+/install_manifest.txt
+/compile_commands.json
+
+# Logs
+*.log
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*.user
+*.workspace
+*.project
+
+# Generated files
+*.tmp
+*.bak
+*.old
+
