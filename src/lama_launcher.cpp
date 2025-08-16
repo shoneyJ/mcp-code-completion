@@ -7,17 +7,22 @@
 #include <vector>
 #include <unistd.h>
 #include <sys/wait.h>
-
-class Process {
+#include <sstream>
+#include <fstream>
+class Process
+{
 public:
     pid_t pid{-1};
 
-    bool spawn(const std::vector<std::string>& args) {
+    bool spawn(const std::vector<std::string> &args)
+    {
         pid = fork();
-        if (pid == 0) {
+        if (pid == 0)
+        {
             // Child process
-            std::vector<char*> cargs;
-            for (auto& arg : args) cargs.push_back(const_cast<char*>(arg.c_str()));
+            std::vector<char *> cargs;
+            for (auto &arg : args)
+                cargs.push_back(const_cast<char *>(arg.c_str()));
             cargs.push_back(nullptr);
             execvp(cargs[0], cargs.data());
             _exit(127); // exec failed
@@ -25,42 +30,103 @@ public:
         return pid > 0;
     }
 
-    void terminate() {
-        if (pid > 0) {
+    void terminate()
+    {
+        if (pid > 0)
+        {
             kill(pid, SIGTERM);
             waitpid(pid, nullptr, 0);
         }
     }
 };
 
-int main() {
+// Convert hex "1F90" -> port 8080
+int hex_to_port(const std::string &hex)
+{
+    unsigned int port;
+    std::stringstream ss;
+    ss << std::hex << hex;
+    ss >> port;
+    return port;
+}
+// Check /proc/net/tcp for active ESTABLISHED connections on given port
+bool has_active_connections(int port)
+{
+    std::ifstream tcp("/proc/net/tcp");
+    if (!tcp.is_open())
+        return false;
+
+    std::string line;
+    std::getline(tcp, line); // skip header
+
+    while (std::getline(tcp, line))
+    {
+        std::istringstream iss(line);
+        std::string sl, local_address, rem_address, st;
+        iss >> sl >> local_address >> rem_address >> st;
+
+        // local_address looks like "0100007F:1F90" (127.0.0.1:8080 in hex)
+        auto colon_pos = local_address.find(':');
+        if (colon_pos == std::string::npos)
+            continue;
+
+        std::string hex_port = local_address.substr(colon_pos + 1);
+        int local_port = hex_to_port(hex_port);
+
+        if (local_port == port && st == "01")
+        { // "01" = ESTABLISHED
+            return true;
+        }
+    }
+    return false;
+}
+int main()
+{
     // Arguments for llama-server
+    int port = 8080;
     std::vector<std::string> args = {
-        "./llama-server",
+        "../extern/llama.cpp/build/bin/llama-server",
         "-m", std::string(std::getenv("HOME")) + "/models/qwen/Qwen_Qwen2.5-Coder-1.5B-Instruct-GGUF_qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
         "-ngl", "99",
         "-c", "2048",
         "--host", "0.0.0.0",
-        "--port", "8080"
-    };
+        "--port", std::to_string(port)};
 
     Process llama;
-    if (!llama.spawn(args)) {
+    if (!llama.spawn(args))
+    {
         std::cerr << "Failed to spawn llama-server!\n";
         return 1;
     }
 
     std::cout << "llama-server started successfully (pid=" << llama.pid << ").\n";
 
+    // Wait briefly to check if process died immediately
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    int status;
+    pid_t result = waitpid(llama.pid, &status, WNOHANG);
+    if (result == llama.pid)
+    {
+        std::cerr << "llama-server exited early with status " << status << "\n";
+        return 1;
+    }
+
     // Idle timeout management
     auto last_activity = std::chrono::steady_clock::now();
     constexpr auto idle_limit = std::chrono::minutes(5);
 
-    while (true) {
+    while (true)
+    {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         auto now = std::chrono::steady_clock::now();
 
-        if (now - last_activity > idle_limit) {
+        if (has_active_connections(port))
+        {
+            last_activity = std::chrono::steady_clock::now();
+        }
+
+        if (now - last_activity > idle_limit)
+        {
             std::cout << "Idle timeout reached. Terminating llama-server.\n";
             llama.terminate();
             break;
