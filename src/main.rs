@@ -15,7 +15,6 @@ use tracing::{error, info};
 
 #[derive(Debug, Deserialize)]
 struct JsonRpcRequest {
-    jsonrpc: Option<String>,
     method: String,
     params: Option<Value>,
     id: Option<Value>,
@@ -64,13 +63,36 @@ async fn handle_mcp(Json(payload): Json<JsonRpcRequest>) -> Response {
     let id = payload.id.unwrap_or(Value::Null);
 
     match name {
-        "code-completion" => {
+        "code-completion-ollama" => {
             let prefix = args
                 .get("prefix")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
             match ollama_completion(prefix.clone()).await {
+                Ok(completion) => {
+                    let resp = JsonRpcResponse {
+                        jsonrpc: "2.0",
+                        id,
+                        result: Some(json!({ "completion": completion })),
+                        error: None,
+                    };
+                    (StatusCode::OK, Json(resp)).into_response()
+                }
+                Err(e) => {
+                    error!("completion failed: {:?}", e);
+                    let resp = make_error(Value::Null, "internal_error", &format!("{}", e));
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(resp)).into_response()
+                }
+            }
+        }
+        "code-completion-llamacpp" => {
+            let prefix = args
+                .get("prefix")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            match llamacpp_completion(prefix.clone()).await {
                 Ok(completion) => {
                     let resp = JsonRpcResponse {
                         jsonrpc: "2.0",
@@ -141,6 +163,57 @@ async fn ollama_completion(prefix: String) -> Result<String> {
     let j: Value = resp.error_for_status()?.json().await?;
 
     // Ollama /api/generate typically returns { "response": "...", "done": true, ... }
+    // or other shapes; try to extract the likely fields.
+    if let Some(s) = j.get("response").and_then(|v| v.as_str()) {
+        return Ok(s.trim().to_string());
+    }
+    // some versions might return "text" or "result"
+    if let Some(s) = j.get("text").and_then(|v| v.as_str()) {
+        return Ok(s.trim().to_string());
+    }
+    // fallback: if a top-level "choices" (OpenAI-like) exists
+    if let Some(choice) = j.get("choices").and_then(|c| c.get(0)) {
+        if let Some(txt) = choice.get("text").and_then(|t| t.as_str()) {
+            return Ok(txt.trim().to_string());
+        }
+        if let Some(msg) = choice
+            .get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+        {
+            return Ok(msg.trim().to_string());
+        }
+    }
+
+    // final fallback: stringify the whole body (not ideal)
+    Ok(j.to_string())
+}
+
+async fn llamacpp_completion(prefix: String) -> Result<String> {
+    let llamacpp_url =
+        env::var("LLAMACPP_URL").unwrap_or_else(|_| "http://127.0.0.1:8080/completion".into());
+
+    let prompt = format!(
+        "You are a concise code/command-completion assistant. The user typed: \"{}\".\nReturn only the completion/continuation (no explanation).",
+        prefix.replace('"', "\\\"")
+    );
+
+    let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
+
+    let body = json!({
+
+        "prompt": prompt,
+
+
+    });
+
+    let resp = timeout(
+        Duration::from_secs(8),
+        client.post(&llamacpp_url).json(&body).send(),
+    )
+    .await??;
+    let j: Value = resp.error_for_status()?.json().await?;
+
     // or other shapes; try to extract the likely fields.
     if let Some(s) = j.get("response").and_then(|v| v.as_str()) {
         return Ok(s.trim().to_string());
