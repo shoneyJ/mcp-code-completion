@@ -1,0 +1,24 @@
+{
+  // Use rust-analyzer as the default formatter for Rust files
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true
+  },
+
+  // Automatically format on save for all languages (optional)
+  "editor.formatOnSave": true,
+
+  // Enable code lens for run/debug references
+  "rust-analyzer.cargo.runBuildScripts": true,
+
+  // Enable inlay hints (parameter names, types, etc.)
+  "rust-analyzer.inlayHints.enable": true,
+  "rust-analyzer.inlayHints.typeHints": true,
+  "rust-analyzer.inlayHints.parameterHints": true,
+  
+  // Optional: check code on save
+  "rust-analyzer.checkOnSave.command": "clippy",
+
+  // Optional: maximum number of suggestions in completion
+  "rust-analyzer.completion.autoimport.enable": true
+}

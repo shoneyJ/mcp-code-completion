@@ -202,7 +202,15 @@ async fn llamacpp_completion(prefix: String) -> Result<String> {
 
     let body = json!({
 
-        "prompt": prompt,
+          "prompt": prompt,
+          "max_tokens": 150,
+          "temperature": 0.0,
+          "stop": ["\n\n", "//", "#"],
+          "repeat_penalty": 1.2,
+          "repeat_last_n": 64,
+          "stream": false,
+          "top_k": 40,
+          "top_p": 0.95
 
 
     });
@@ -214,26 +222,8 @@ async fn llamacpp_completion(prefix: String) -> Result<String> {
     .await??;
     let j: Value = resp.error_for_status()?.json().await?;
 
-    // or other shapes; try to extract the likely fields.
-    if let Some(s) = j.get("response").and_then(|v| v.as_str()) {
+    if let Some(s) = j.get("content").and_then(|v| v.as_str()) {
         return Ok(s.trim().to_string());
-    }
-    // some versions might return "text" or "result"
-    if let Some(s) = j.get("text").and_then(|v| v.as_str()) {
-        return Ok(s.trim().to_string());
-    }
-    // fallback: if a top-level "choices" (OpenAI-like) exists
-    if let Some(choice) = j.get("choices").and_then(|c| c.get(0)) {
-        if let Some(txt) = choice.get("text").and_then(|t| t.as_str()) {
-            return Ok(txt.trim().to_string());
-        }
-        if let Some(msg) = choice
-            .get("message")
-            .and_then(|m| m.get("content"))
-            .and_then(|c| c.as_str())
-        {
-            return Ok(msg.trim().to_string());
-        }
     }
 
     // final fallback: stringify the whole body (not ideal)
