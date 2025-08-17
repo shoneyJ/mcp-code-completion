@@ -21,6 +21,7 @@ public:
         {
             // Child process
             std::vector<char *> cargs;
+            cargs.reserve(args.size() + 1);
             for (auto &arg : args)
                 cargs.push_back(const_cast<char *>(arg.c_str()));
             cargs.push_back(nullptr);
@@ -40,18 +41,14 @@ public:
     }
 };
 
-// Convert hex "1F90" -> port 8080
-int hex_to_port(const std::string &hex)
-{
-    unsigned int port;
-    std::stringstream ss;
-    ss << std::hex << hex;
-    ss >> port;
-    return port;
+// Convert hex string to integer port
+inline int hex_to_port(const std::string& hex) {
+    return std::stoi(hex, nullptr, 16);
 }
 // Check /proc/net/tcp for active ESTABLISHED connections on given port
 bool has_active_connections(int port)
 {
+    static constexpr char ESTABLISHED[] = "01"; // TCP_ESTABLISHED
     std::ifstream tcp("/proc/net/tcp");
     if (!tcp.is_open())
         return false;
@@ -61,19 +58,19 @@ bool has_active_connections(int port)
 
     while (std::getline(tcp, line))
     {
+        auto colon_pos = line.find(':');
+        if (colon_pos == std::string::npos) continue;
+        
         std::istringstream iss(line);
         std::string sl, local_address, rem_address, st;
         iss >> sl >> local_address >> rem_address >> st;
 
         // local_address looks like "0100007F:1F90" (127.0.0.1:8080 in hex)
-        auto colon_pos = local_address.find(':');
-        if (colon_pos == std::string::npos)
-            continue;
-
+       
         std::string hex_port = local_address.substr(colon_pos + 1);
         int local_port = hex_to_port(hex_port);
 
-        if (local_port == port && st == "01")
+        if (local_port == port && st == ESTABLISHED)
         { // "01" = ESTABLISHED
             return true;
         }
@@ -117,15 +114,14 @@ int main()
 
     while (true)
     {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        auto now = std::chrono::steady_clock::now();
+        std::this_thread::sleep_for(std::chrono::seconds(1)); 
 
         if (has_active_connections(port))
         {
             last_activity = std::chrono::steady_clock::now();
         }
 
-        if (now - last_activity > idle_limit)
+        if (std::chrono::steady_clock::now() - last_activity > idle_limit)
         {
             std::cout << "Idle timeout reached. Terminating llama-server.\n";
             llama.terminate();
