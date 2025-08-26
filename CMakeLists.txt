@@ -9,5 +9,5 @@ add_executable(lama_launcher src/lama_launcher.cpp)
 
 # On Linux, link pthread if required
 if(UNIX AND NOT APPLE)
-    target_link_libraries(lama_launcher pthread)
+  target_link_libraries(lama_launcher pthread)
 endif()
