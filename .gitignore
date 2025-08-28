@@ -57,3 +57,5 @@ launchllamacpp
 *.bak
 *.old
 
+**/node_modules/
+
